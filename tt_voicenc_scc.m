@@ -1,8 +1,10 @@
-%function tt_voicenc_scc(input)
-% test as tt_voicenc_scc("-50 -p")or as tt_voicenc_scc("-60 -p")
+function tt_voicenc_scc(params)
+% test as tt_voicenc_scc("-50p")or as tt_voicenc_scc("-60p")
 
-%input = " -p -50"; 
-input = " -p -60"; 
+%params = ' -p60t00g01696'; 
+%params = ' -p60t10'; 
+%params = " -p60"; 
+%params = " -p60"; 
 
 close all
 
@@ -35,7 +37,39 @@ T = hex2dec(['6a';'64';'5e';'59';'54';'4f';'4a';'46';'42';'3f';'3b';'38' ])'*32;
 T = [T;T/2;T/4;T/8;T/16;T/32;T/64;T/128];
 U = T(:);
 
-if (contains(input,"-p",'IgnoreCase',true)) 
+if exist('params')==0
+    fprintf("use tt_voicenc_scc -60p for NTSC encoding and    playback\n")
+    fprintf("use tt_voicenc_scc -50p for PAL  encoding and    playback\n")
+    fprintf("use tt_voicenc_scc -60  for NTSC encoding and no playback\n")
+    fprintf("use tt_voicenc_scc -50  for PAL  encoding and no playback\n")
+    params = ' ';
+end
+    
+if (contains(params,"G",'IgnoreCase',true)) 
+    k = strfind(params,'G');
+    if isempty(k)
+        k = strfind(params,'g');
+    end
+    period = str2double(params((k+1):(k+5)));
+    fprintf('Forced period %d\n',period);
+else
+    period = 0;
+end
+
+
+    
+if (contains(params,"T",'IgnoreCase',true)) 
+    k = strfind(params,'T');
+    if isempty(k)
+        k = strfind(params,'t');
+    end
+    pt = str2double(params((k+1):(k+2)))/100;
+else
+    pt = 0;
+end
+fprintf('Probablity treshold %.2f\n',pt);
+
+if (contains(params,"p",'IgnoreCase',true)) 
     playsample = true;
     fprintf('Playback on\n');
 else
@@ -43,7 +77,7 @@ else
     fprintf('Playback off\n');
 end
 
-if (contains(input,"-60",'IgnoreCase',true)) 
+if (contains(params,"60",'IgnoreCase',true)) 
     Tframe = 1/60;
     halfsec = 30;
     fprintf('Encoding for NTSC\n');
@@ -61,7 +95,7 @@ names = dir([path '*.wav']);
 
 if isempty(names)
     fprintf('I cannot find .wav files in %s \n',path);
-    fprintf('Create %s and %s directories for input and output files\n',path,"data\");
+    fprintf('Create %s and %s directories for params and output files\n',path,"data\");
     return
 end
 
@@ -73,7 +107,7 @@ nfiles = size(names,1);
 % voicebox('rapt_tcorw',Tframe*0.75);
 % v_voicebox('dy_spitch',0.4);
 
-FFS = 22050;
+FFS = 44100;
 Wl = 32;
     
 fid_p = fopen('data\all_data_files_periods.asm','w');
@@ -107,10 +141,14 @@ for ii = 1:nfiles
     
 %    X = CX + randn(size(CX))*max(abs(CX))/64;
     
-    Nntsc = fix(Tframe*FS);
+    Nframe = round(Tframe*FS);
 
     figure('Name',names(ii).name)
 	[fx,tp,pv,~] = v_fxpefac(X,FS,Tframe,'G');
+    
+    if period>0
+        fx(:) = 3579545/(period+1)/32;  % force pitch if user defined
+    end
 	
 %    [fx,tp,pv,fv] = v_fxpefac(X,FS,Tframe);
 %    q.tframe = Tframe;
@@ -119,24 +157,27 @@ for ii = 1:nfiles
     Nblk = length(fx);
     Nbk(ii) = Nblk;
     
-    YY = zeros((Nblk)*Nntsc,1);
-    XX = zeros((Nblk)*Nntsc,1);
+    YY = zeros((Nblk)*Nframe,1);
+    XX = zeros((Nblk)*Nframe,1);
 
     SCC = zeros(Nblk,Wl);
     Ndft = 2^16;
 	
     for i=1:Nblk
-        ns  = round((tp(i)-Tframe/2)*FS);
-        
-        tti = (ns):(ns+Nntsc-1);            % choose one window
+        ns  = fix((tp(i)-Tframe/2)*FS);
+        tti = (ns):(ns+Nframe-1);                       % choose one frame
 
-        s = [CX(tti); CX(tti); CX(tti);];   % same window 3 times to avoid edge effects
-        
-        XX(((i-1)*Nntsc+1):(i*Nntsc)) =  CX(tti);
+        if i>1 
+            s = [CX(tti-Nframe); CX(tti); CX(tti+Nframe);];   
+        else
+            s = [zeros(Nframe,1); CX(tti); CX(tti+Nframe);];   % same window 3 times to avoid edge effects
+        end
+
+        XX(((i-1)*Nframe+1):(i*Nframe)) =  CX(tti);
         
         if (fx(i)>max([1/Tframe, 3579545/(32*2^12)]))
             
-            if (pv(i)<=0.05) 						
+            if (pv(i)<=pt) 						
                 XF = abs(fft(s,Ndft));				% for unvoiced segments use the frequency peak
                 [~,j] = max(XF(1:(Ndft/2)));
                 fx(i) = max(1/Tframe,(j-1)/Ndft*FS/Wl);
@@ -153,8 +194,8 @@ for ii = 1:nfiles
                 ss = resample(s,P,Q);               % interpolate 3 windows
 
                 sx = round(Tframe*fx(i)*Wl);
-                dx = round(2*Tframe*fx(i)*Wl);
-                np = fix((dx-sx)/Wl);
+                %dx = round(2*Tframe*fx(i)*Wl);
+                np = round(sx/Wl);      %fix((dx-sx)/Wl);
                 ss = mean(reshape(ss((sx+1):(sx+np*Wl)),Wl,np),2);     
             end
 
@@ -169,10 +210,10 @@ for ii = 1:nfiles
         else
             fx(i) = 0;
             SCC(i,:) = zeros(1,Wl);
-            y = zeros(1,Nntsc);
+            y = zeros(1,Nframe);
         end
         
-        YY(((i-1)*Nntsc+1):((i)*Nntsc)) =  y(1:Nntsc);
+        YY(((i-1)*Nframe+1):((i)*Nframe)) =  y(1:Nframe);
        
     end
     SCCI{ii} = SCC;
@@ -191,11 +232,11 @@ for ii = 1:nfiles
 %    legend('pitch apt');
     
     figure('Name',names(ii).name)
-    spectrogram(XX,kaiser(Nntsc,8),fix(Nntsc/2),(0:1:FS/2),FS)
+    spectrogram(XX,kaiser(Nframe,8),fix(Nframe/2),(0:1:FS/2),FS)
     title('Original');
     
     figure('Name',names(ii).name)
-    spectrogram(YY,kaiser(Nntsc,8),fix(Nntsc/2),(0:1:FS/2),FS)
+    spectrogram(YY,kaiser(Nframe,8),fix(Nframe/2),(0:1:FS/2),FS)
     title('Encoded');
 
     fprintf('file#%d  %s\n',ii,names(ii).name);
