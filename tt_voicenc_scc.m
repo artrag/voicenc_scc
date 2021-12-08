@@ -1,12 +1,26 @@
 function tt_voicenc_scc(params)
-% test as tt_voicenc_scc("-50p")or as tt_voicenc_scc("-60p")
+% run as tt_voicenc_scc('-np') 
+% converts all wav files in .\wav
+% 
+% n to convert fo NTSC, i.e. with frame duration 1/60 sec (defaut PAL)
+% gNNNNN to force a fixed period NNNNN as pitch 
+% tNN to specify a treshold NN in 00-99 as probabilty for unvoiced frames
+% o0 to not perform any phase shift of wave samples 
+% o1 to shift phase of wave samples according to mse bteewen successive
+% wave samples (default)
+% o2 to shift phase of wave samples according to the phase of the first 
+% bin
+% w to see the in a window frame by frame the optimization of the phase 
+% of wave samples 
 
-%params = ' -p60t00g01696'; 
-%params = ' -p60t10'; 
-%params = " -p60"; 
-%params = " -p60"; 
+% test
+%params = ' -pnt00g01696'; 
+%params = ' -pnt10'; 
+%params = " -pn"; 
+%params = " -pn"; 
 
 close all
+
 
 % Notes
 % Konami values found in Nemesis 2 replayer.
@@ -37,14 +51,34 @@ T = hex2dec(['6a';'64';'5e';'59';'54';'4f';'4a';'46';'42';'3f';'3b';'38' ])'*32;
 T = [T;T/2;T/4;T/8;T/16;T/32;T/64;T/128];
 U = T(:);
 
-if exist('params')==0
-    fprintf("use tt_voicenc_scc -60p for NTSC encoding and    playback\n")
-    fprintf("use tt_voicenc_scc -50p for PAL  encoding and    playback\n")
-    fprintf("use tt_voicenc_scc -60  for NTSC encoding and no playback\n")
-    fprintf("use tt_voicenc_scc -50  for PAL  encoding and no playback\n")
+if exist('params','var')==0
+    fprintf("\n");
+    fprintf("Use tt_voicenc_scc -n for NTSC i.e. frame duration 1/60 sec (defaut PAL, i.e. 1/50 sec) \n")
+    fprintf("input wav files go to ./wav \n")
+    fprintf("output files are generated in ./data\n")
+    fprintf("\n");
+    fprintf("Other parameters (do not leave spaces):\n\n");
+    fprintf(" p to play the converted samples\n");    
+    fprintf(" gNNNNN to force a fixed period NNNNN as pitch\n");
+    fprintf(" tNN to specify a treshold NN in 00-99 as probabilty for unvoiced frames (defaut 00)\n");
+    fprintf(" o0 to not perform any phase shift of wave samples \n");
+    fprintf(" o1 to shift phase of wave samples according to mse bteewen successive wave samples (default)\n");
+    fprintf(" o2 to shift phase of wave samples according to the phase of the first bin\n");
+    fprintf(" w to see the in a window frame by frame the optimization of the phase of wave samples \n");
+    
+    fprintf("\n");
+
     params = ' ';
 end
-    
+
+
+if (contains(params,"W",'IgnoreCase',true)) 
+    fprintf('Show frame by frame the optimization of the phase of wave samples\n');
+    see_phase_opt = 1;    
+else
+    see_phase_opt = 0;
+end
+
 if (contains(params,"G",'IgnoreCase',true)) 
     k = strfind(params,'G');
     if isempty(k)
@@ -55,8 +89,6 @@ if (contains(params,"G",'IgnoreCase',true))
 else
     period = 0;
 end
-
-
     
 if (contains(params,"T",'IgnoreCase',true)) 
     k = strfind(params,'T');
@@ -69,15 +101,34 @@ else
 end
 fprintf('Probablity treshold %.2f\n',pt);
 
+phase_shift  = 1;
+if (contains(params,"o",'IgnoreCase',true)) 
+    k = strfind(params,'O');
+    if isempty(k)
+        k = strfind(params,'o');
+    end
+    phase_shift = str2double(params(k+1));
+end
+
+if (phase_shift == 0)
+    fprintf('No phase optimization for wave samples \n');
+elseif (phase_shift == 1)
+    fprintf('Shifting phase of wave samples according to MSE between adjacent waves \n');
+elseif (phase_shift == 2)
+    fprintf('Shifting phase of wave samples according to the phase of the first bin \n');
+end
+
+
+
 if (contains(params,"p",'IgnoreCase',true)) 
     playsample = true;
-    fprintf('Playback on\n');
+    fprintf('Playback on. NB: the audio does not reflect phase correction for wave samples\n');
 else
     playsample = false;
     fprintf('Playback off\n');
 end
 
-if (contains(params,"60",'IgnoreCase',true)) 
+if (contains(params,"N",'IgnoreCase',true)) 
     Tframe = 1/60;
     halfsec = 30;
     fprintf('Encoding for NTSC\n');
@@ -204,6 +255,59 @@ for ii = 1:nfiles
 %             	ss = [ss(kk:32); ss(1:(kk-1))];
 %             end
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% experimental phase correction
+% phase correction 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+            if (phase_shift==2)        % use the phase of the carrier to shift all sample waves
+                SS = fft(ss);
+                phase_offset = phase(SS(2)) * (0:(Wl/2-1)) ;
+
+                SS(1:Wl/2)         = SS(1:Wl/2) .* exp(-sqrt(-1)*phase_offset');
+                SS(Wl:-1:(Wl/2+2)) = conj(SS(2:Wl/2));
+
+                nss = ifft(SS);
+                
+                if (see_phase_opt)
+                    figure(100);
+                    subplot(3,1,1),plot(ss,'-o') ,grid,title('original');
+                    subplot(3,1,2),plot(nss,'-o'),grid,title('shifted');
+                    if (i>1) 
+                        subplot(3,1,3), plot(SCC(i-1,:)','-o'),grid,title('previous shifted');
+                    end
+                    drawnow 
+                end
+                
+                ss = nss;
+            elseif (phase_shift==1)    % use mse beteween successive waves to shift wave samples
+                if (i>1)
+                    ref = SCC(i-1,:)';
+                    mopt = inf;
+                    iopt = 1;
+                    for k=1:Wl
+                        t = [ss(k:Wl); ss(1:k-1)];
+                        m = norm(t-ref);
+                        if (m<mopt)
+                            iopt = k;
+                            mopt = m;
+                        end
+                    end
+                    k = iopt;
+                    nss = [ss(k:Wl); ss(1:k-1)];
+                    
+                    if (see_phase_opt)
+                        figure(100);
+                        subplot(3,1,1),plot(ss,'-o') ,grid,title('original');
+                        subplot(3,1,2),plot(nss,'-o'),grid,title('shifted');
+                        subplot(3,1,3), plot(SCC(i-1,:)','-o'),grid,title('previous shifted');
+                        drawnow 
+                    end
+                    
+                    ss = nss;
+                end
+            end
+
             SCC(i,:) = ss';
             y = resample(repmat(SCC(i,:),1,np+2),Q,P);
 
@@ -308,7 +412,7 @@ end
 fprintf(fid,'nfiles: equ  %d \n\n',nfiles);
 fclose(fid);
 
-% !make.bat
+%!make.bat
 
 fclose all;
 
