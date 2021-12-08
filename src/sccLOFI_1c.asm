@@ -448,9 +448,13 @@ SCCReplayerMute:
 ; Initialize the scc
 ;-------------------------------------
 SccInit:
-		ld		a,00100000b         ; Reset phase when freq is written
-		ld		(98E0h),a			; on SCC
-		ld		(98C0h),a			; on SCC+ in SCC mode
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;
+; 	LATER NOTE: DO NOT RESET THE SAMPLE PHASE IN ORDER TO REDUCE DISCONTINUITY BETWEEN WAVES
+;
+;		ld		a,00100000b         ; Reset phase when freq is written
+;		ld		(98E0h),a			; on SCC
+;		ld		(98C0h),a			; on SCC+ in SCC mode
 
 		; ld      a,00001111b     	; scc channel 1,2,3,4 active
 		; ld      (988Fh),a
