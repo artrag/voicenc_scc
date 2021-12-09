@@ -1,12 +1,12 @@
 function tt_voicenc_scc(params)
 % run as tt_voicenc_scc('-np') 
-% converts all wav files in .\wav
+% converts all wav files in .\wav 
 % 
-% n to convert fo NTSC, i.e. with frame duration 1/60 sec (defaut PAL)
+% n to convert fo NTSC, i.e. with frame duration 1/60 sec (default PAL)
 % gNNNNN to force a fixed period NNNNN as pitch 
-% tNN to specify a treshold NN in 00-99 as probabilty for unvoiced frames
+% tNN to specify a threshold NN in 00-99 as probability for unvoiced frames
 % o0 to not perform any phase shift of wave samples 
-% o1 to shift phase of wave samples according to mse bteewen successive
+% o1 to shift phase of wave samples according to mse between successive
 % wave samples (default)
 % o2 to shift phase of wave samples according to the phase of the first 
 % bin
@@ -51,18 +51,22 @@ T = hex2dec(['6a';'64';'5e';'59';'54';'4f';'4a';'46';'42';'3f';'3b';'38' ])'*32;
 T = [T;T/2;T/4;T/8;T/16;T/32;T/64;T/128];
 U = T(:);
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Parameter analysis 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 if exist('params','var')==0
     fprintf("\n");
-    fprintf("Use tt_voicenc_scc -n for NTSC i.e. frame duration 1/60 sec (defaut PAL, i.e. 1/50 sec) \n")
+    fprintf("Use tt_voicenc_scc -n for NTSC i.e. frame duration 1/60 sec (default PAL, i.e. 1/50 sec) \n")
     fprintf("input wav files go to ./wav \n")
     fprintf("output files are generated in ./data\n")
     fprintf("\n");
     fprintf("Other parameters (do not leave spaces):\n\n");
     fprintf(" p to play the converted samples\n");    
     fprintf(" gNNNNN to force a fixed period NNNNN as pitch\n");
-    fprintf(" tNN to specify a treshold NN in 00-99 as probabilty for unvoiced frames (defaut 00)\n");
+    fprintf(" tNN to specify a threshold NN in 00-99 as probability for unvoiced frames (default 00)\n");
     fprintf(" o0 to not perform any phase shift of wave samples \n");
-    fprintf(" o1 to shift phase of wave samples according to mse bteewen successive wave samples (default)\n");
+    fprintf(" o1 to shift phase of wave samples according to mse between successive wave samples (default)\n");
     fprintf(" o2 to shift phase of wave samples according to the phase of the first bin\n");
     fprintf(" w to see the in a window frame by frame the optimization of the phase of wave samples \n");
     
@@ -118,8 +122,6 @@ elseif (phase_shift == 2)
     fprintf('Shifting phase of wave samples according to the phase of the first bin \n');
 end
 
-
-
 if (contains(params,"p",'IgnoreCase',true)) 
     playsample = true;
     fprintf('Playback on. NB: the audio does not reflect phase correction for wave samples\n');
@@ -152,6 +154,9 @@ end
 
 nfiles = size(names,1);
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Actual processing
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % voicebox('rapt_tframe',Tframe);
 % voicebox('rapt_tlpw',Tframe/2);
@@ -165,12 +170,9 @@ fid_p = fopen('data\all_data_files_periods.asm','w');
 fid_w = fopen('data\all_data_files_waves.asm','w');
 
 SCCI = cell(1,nfiles);
-
 Nbk = zeros(1,nfiles);
-
 TPI = cell(1,nfiles);
 
-%nfiles = 5;
 for ii = 1:nfiles 
     
     name = [ path names(ii).name ];
@@ -190,15 +192,13 @@ for ii = 1:nfiles
     CX = v_zerotrim(round(256*X))/256;			% 8 bit version without ending zeros
     X = CX;
     
-%    X = CX + randn(size(CX))*max(abs(CX))/64;
-    
     Nframe = round(Tframe*FS);
 
     figure('Name',names(ii).name)
 	[fx,tp,pv,~] = v_fxpefac(X,FS,Tframe,'G');
     
     if period>0
-        fx(:) = 3579545/(period+1)/32;  % force pitch if user defined
+        fx(:) = 3579545/(period+1)/32;          % force pitch if user defined
     end
 	
 %    [fx,tp,pv,fv] = v_fxpefac(X,FS,Tframe);
@@ -216,7 +216,7 @@ for ii = 1:nfiles
 	
     for i=1:Nblk
         ns  = fix((tp(i)-Tframe/2)*FS);
-        tti = (ns):(ns+Nframe-1);                       % choose one frame
+        tti = (ns):(ns+Nframe-1);                               % choose one frame
 
         if i>1 
             s = [CX(tti-Nframe); CX(tti); CX(tti+Nframe);];   
@@ -250,15 +250,9 @@ for ii = 1:nfiles
                 ss = mean(reshape(ss((sx+1):(sx+np*Wl)),Wl,np),2);     
             end
 
-%             if (i>1)
-%                 [~,kk] = min(abs(SCC(i-1,:)-ss'));
-%             	ss = [ss(kk:32); ss(1:(kk-1))];
-%             end
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% experimental phase correction
-% phase correction 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+            %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+            % experimental phase correction
+            %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
             if (phase_shift==2)        % use the phase of the carrier to shift all sample waves
                 SS = fft(ss);
@@ -321,6 +315,10 @@ for ii = 1:nfiles
        
     end
     SCCI{ii} = SCC;
+    
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    % plot results 
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
     figure('Name',names(ii).name)
     subplot(2,1,1)
@@ -357,10 +355,10 @@ for ii = 1:nfiles
     [SNR,~] = snrseg(YY,XX,FS,'Vq',Tframe);
     fprintf('SNR = %f \n',SNR)
     
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     % write ASM output
     % MSX SCC
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
     TP = uint16(3579545./(32*fx)-1);
     TP(TP>2^12-1) = 2^12-1;
@@ -396,7 +394,7 @@ for ii = 1:nfiles
             fprintf(fid_w,'0x%s,',dec2hex(data(i,j),2));
         end
         fprintf(fid_w,'0x%s\n',dec2hex(data(i,32),2));
-     end
+    end
     
 end
 
@@ -417,7 +415,7 @@ fclose(fid);
 fclose all;
 
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % TriloTracker export
 % .SAM file
 % 
