@@ -9,7 +9,7 @@ function tt_voicenc_scc(params)
 % o1 to shift phase of wave samples according to mse between successive
 % wave samples (default)
 % o2 to shift phase of wave samples according to the phase of the first 
-% bin
+% frequency bin
 % w to see the in a window frame by frame the optimization of the phase 
 % of wave samples 
 
@@ -22,7 +22,7 @@ function tt_voicenc_scc(params)
 close all
 
 
-% Notes
+% Notes as SCC periods
 % Konami values found in Nemesis 2 replayer.
 % C_PER       equ   $6a*32      
 % C1_PER      equ   $64*32
@@ -67,7 +67,7 @@ if exist('params','var')==0
     fprintf(" tNN to specify a threshold NN in 00-99 as probability for unvoiced frames (default 00)\n");
     fprintf(" o0 to not perform any phase shift of wave samples \n");
     fprintf(" o1 to shift phase of wave samples according to mse between successive wave samples (default)\n");
-    fprintf(" o2 to shift phase of wave samples according to the phase of the first bin\n");
+    fprintf(" o2 to shift phase of wave samples according to the phase of the first frequency bin\n");
     fprintf(" w to see the in a window frame by frame the optimization of the phase of wave samples \n");
     
     fprintf("\n");
@@ -119,7 +119,7 @@ if (phase_shift == 0)
 elseif (phase_shift == 1)
     fprintf('Shifting phase of wave samples according to MSE between adjacent waves \n');
 elseif (phase_shift == 2)
-    fprintf('Shifting phase of wave samples according to the phase of the first bin \n');
+    fprintf('Shifting phase of wave samples according to the phase of the first frequency bin \n');
 end
 
 if (contains(params,"p",'IgnoreCase',true)) 
@@ -236,27 +236,42 @@ for ii = 1:nfiles
                 [P, Q] = rat(fx(i)*Wl/FS);
                 ss = resample(s,P,Q);               % interpolate 3 windows
 
-                sx = round(Tframe*fx(i)*Wl);
-                dx = round(2*Tframe*fx(i)*Wl);
-                np = fix((dx-sx)/Wl);
-                ss = ss((sx+1):(sx+Wl));            % take W1 samples from the central window
+                np = round(Tframe*fx(i));           % number of pitch periods in a frame
+
+                mid = round(3/2*Tframe * fx(i)*Wl); % middle point of the frame 
+
+                % take one pitch period from the middle of the frame
+                ss = ss((mid+1-Wl/2):(mid+Wl/2));     
+
             else			
                 [P, Q] = rat(fx(i)*Wl/FS);          % for voiced segments use the pitch
-                ss = resample(s,P,Q);               % interpolate 3 windows
+                ss = resample(s,P,Q);               % interpolate 3 frames at 32*pitch
 
-                sx = round(Tframe*fx(i)*Wl);
-                %dx = round(2*Tframe*fx(i)*Wl);
-                np = round(sx/Wl);      %fix((dx-sx)/Wl);
+                sx = round(Tframe*fx(i)*Wl);        % first sample of the middle frame
+                np = round(Tframe*fx(i));           % number of pitch periods in a frame
+                
+                % average on the number of pitch periods within the frame
                 ss = mean(reshape(ss((sx+1):(sx+np*Wl)),Wl,np),2);     
+
+                %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+                % experimental: choose one pitch period from the middle of
+                % the rame
+                %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+                
+                % middle point of the frame 
+%                 mid = round(3/2*Tframe * fx(i)*Wl); 
+                % take one pitch period from the middle of the frame
+%                 ss = ss((mid+1-Wl/2):(mid+Wl/2));     
+                          
             end
 
             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
             % experimental phase correction
             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-            if (phase_shift==2)        % use the phase of the carrier to shift all sample waves
+            if (phase_shift==2)        % use the phase of the first bin to shift all sample waves
                 SS = fft(ss);
-                phase_offset = phase(SS(2)) * (0:(Wl/2-1)) ;
+                phase_offset = (phase(SS(2))+pi/2) * (0:(Wl/2-1)) ;
 
                 SS(1:Wl/2)         = SS(1:Wl/2) .* exp(-sqrt(-1)*phase_offset');
                 SS(Wl:-1:(Wl/2+2)) = conj(SS(2:Wl/2));
@@ -265,12 +280,13 @@ for ii = 1:nfiles
                 
                 if (see_phase_opt)
                     figure(100);
-                    subplot(3,1,1),plot(ss,'-o') ,grid,title('original');
-                    subplot(3,1,2),plot(nss,'-o'),grid,title('shifted');
+                    subplot(3,1,1),plot(ss ,'-o'),grid,title('original wave');
+                    subplot(3,1,2),plot(nss,'-o'),grid,title('shifted wave');
                     if (i>1) 
-                        subplot(3,1,3), plot(SCC(i-1,:)','-o'),grid,title('previous shifted');
+                        subplot(3,1,3),plot(SCC(i-1,:)','-o'),grid,title('previous shifted');
                     end
                     drawnow 
+                    %waitforbuttonpress
                 end
                 
                 ss = nss;
@@ -279,23 +295,23 @@ for ii = 1:nfiles
                     ref = SCC(i-1,:)';
                     mopt = inf;
                     iopt = 1;
-                    for k=1:Wl
-                        t = [ss(k:Wl); ss(1:k-1)];
+                    for k=0:(Wl-1)
+                        t = circshift(ss,k);
                         m = norm(t-ref);
                         if (m<mopt)
                             iopt = k;
                             mopt = m;
                         end
                     end
-                    k = iopt;
-                    nss = [ss(k:Wl); ss(1:k-1)];
+                    nss = circshift(ss,iopt);
                     
                     if (see_phase_opt)
                         figure(100);
-                        subplot(3,1,1),plot(ss,'-o') ,grid,title('original');
-                        subplot(3,1,2),plot(nss,'-o'),grid,title('shifted');
-                        subplot(3,1,3), plot(SCC(i-1,:)','-o'),grid,title('previous shifted');
+                        subplot(3,1,1),plot(ss ,'-o'),grid,title('original wave');
+                        subplot(3,1,2),plot(nss,'-o'),grid,title('shifted wave');
+                        subplot(3,1,3),plot(SCC(i-1,:)','-o'),grid,title('previous shifted');
                         drawnow 
+                        %waitforbuttonpress
                     end
                     
                     ss = nss;
